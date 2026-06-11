@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Env
+.env
+
+# Local data — keep the directories but ignore their contents.
+evidence/*
+!evidence/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
