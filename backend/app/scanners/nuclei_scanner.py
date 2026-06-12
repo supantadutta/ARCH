@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 
+from app.config import settings
 from app.scanners.base import BaseScanner, ScanFinding, ScannerResult
 
 # Severity strings emitted by nuclei map directly onto our taxonomy.
@@ -29,11 +30,13 @@ class NucleiScanner(BaseScanner):
             url,
             "-jsonl",
             "-silent",
-            # Safety: rate limit and exclude any intrusive template tags.
+            # Safety: rate limit and exclude all intrusive template tags. The
+            # excluded-tag set is configurable but defaults to a safe list so
+            # only non-intrusive templates run.
             "-rate-limit",
             "10",
             "-exclude-tags",
-            "dos,fuzz,brute,intrusive,sqli-exploit",
+            settings.nuclei_excluded_tags,
             "-no-interactsh",
         ]
 

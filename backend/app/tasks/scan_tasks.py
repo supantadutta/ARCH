@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.celery_app import celery_app
+from app.config import settings
 from app.database import SessionLocal
 from app.models import Asset, Finding, ScanJob
 from app.scanners.registry import get_scanner_class
@@ -30,7 +31,18 @@ def _update_state(task, state: str, meta: dict) -> None:
         pass
 
 
-@celery_app.task(name="run_scan_job", bind=True)
+@celery_app.task(
+    name="run_scan_job",
+    bind=True,
+    # Background job retry policy: retry transient infra errors with exponential
+    # backoff. Policy rejections (scope/kill-switch) are NOT exceptions — they
+    # complete the job as cancelled/failed and are never retried.
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=settings.task_retry_backoff,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=settings.task_max_retries,
+)
 def run_scan_job(self, scan_job_id: int) -> dict:
     """Execute a scan job by id. Returns a small status dict.
 
@@ -85,9 +97,13 @@ def run_scan_job(self, scan_job_id: int) -> dict:
         _update_state(self, "RUNNING", {"job_id": job.id, "phase": "scanning"})
 
         scanner = scanner_cls(db, job.program_id)
-        result = scanner.run(job.target, dry_run=job.dry_run)
+        result = scanner.run(job.target, dry_run=job.dry_run, timeout=job.timeout_seconds)
 
+        # Persist the full raw outcome for traceability.
         job.logs = result.logs
+        job.stdout = (result.stdout or "")[:100000] or None
+        job.stderr = (result.stderr or "")[:100000] or None
+        job.exit_code = result.returncode
         if result.error:
             job.status = "failed"
             job.error_message = result.error

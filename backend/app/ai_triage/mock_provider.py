@@ -11,7 +11,12 @@ It exists so the platform is fully runnable without any external LLM, and so the
 
 from __future__ import annotations
 
-from app.ai_triage.base import AITriageProvider, FindingContext
+from app.ai_triage.base import (
+    AITriageProvider,
+    FindingContext,
+    collect_source_evidence,
+    enforce_grounding,
+)
 from app.schemas.schemas import TriageResult
 
 # Small, conservative category -> (CWE, OWASP) lookup. Used only when the
@@ -61,7 +66,10 @@ class MockTriageProvider(AITriageProvider):
             improved_title, context, severity, business_impact, remediation, cwe, owasp
         )
 
-        return TriageResult(
+        # Evidence used is taken verbatim from the finding — never fabricated.
+        evidence_used = collect_source_evidence(context)
+
+        result = TriageResult(
             title=improved_title,
             severity=severity,  # type: ignore[arg-type]
             confidence=confidence,  # type: ignore[arg-type]
@@ -70,10 +78,13 @@ class MockTriageProvider(AITriageProvider):
             owasp=owasp,
             business_impact=business_impact,
             remediation=remediation,
+            evidence_used=evidence_used,
             report_draft=report_draft,
             manual_review_required=manual_review_required,
             ai_summary=ai_summary,
         )
+        # Apply the same grounding guard used for LLM providers (defence in depth).
+        return enforce_grounding(result, context)
 
     # -- helpers -----------------------------------------------------------
     def _resolve_taxonomy(self, ctx: FindingContext, category: str) -> tuple[str, str]:

@@ -10,27 +10,50 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import require_api_key
+from fastapi import Query
+
+from app.auth import (
+    ROLE_RESEARCHER,
+    ROLE_TRIAGER,
+    Principal,
+    ensure_program_access,
+    require_role,
+)
 from app.config import settings
 from app.database import get_db
 from app.models import Program, ScanJob
-from app.policy.scope_guard import ScopeError, validate_scan_request
-from app.schemas.schemas import ScanJobCreate, ScanJobOut
+from app.policy.scope_guard import (
+    ScopeError,
+    validate_path_scan_request,
+    validate_scan_request,
+)
+from app.scanners.registry import get_scanner_class
+from app.schemas.schemas import Page, ScanJobCreate, ScanJobOut
 from app.services.audit import record_audit
 from app.services.killswitch import is_kill_switch_enabled
+from app.services.pagination import paginate
 from app.tasks.scan_tasks import run_scan_job
 
 router = APIRouter(prefix="/programs/{program_id}/scans", tags=["scans"])
 
 
-@router.get("", response_model=list[ScanJobOut])
-def list_scans(program_id: int, db: Session = Depends(get_db)):
-    return (
-        db.query(ScanJob)
-        .filter(ScanJob.program_id == program_id)
-        .order_by(ScanJob.created_at.desc())
-        .all()
-    )
+@router.get("", response_model=Page)
+def list_scans(
+    program_id: int,
+    job_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _: Principal = Depends(ensure_program_access),
+):
+    query = db.query(ScanJob).filter(ScanJob.program_id == program_id)
+    if job_type:
+        query = query.filter(ScanJob.job_type == job_type)
+    if status:
+        query = query.filter(ScanJob.status == status)
+    query = query.order_by(ScanJob.created_at.desc())
+    return paginate(query, limit, offset, ScanJobOut.model_validate)
 
 
 @router.post("", response_model=ScanJobOut, status_code=201)
@@ -38,8 +61,9 @@ def launch_scan(
     program_id: int,
     payload: ScanJobCreate,
     db: Session = Depends(get_db),
-    actor: str = Depends(require_api_key),
+    principal: Principal = Depends(require_role(ROLE_RESEARCHER, ROLE_TRIAGER)),
 ):
+    actor = principal.email
     if not db.get(Program, program_id):
         raise HTTPException(status_code=404, detail="Program not found")
 
@@ -55,9 +79,20 @@ def launch_scan(
         )
         raise HTTPException(status_code=423, detail="Global kill switch is engaged; scanning disabled.")
 
-    # 2. Scope + scan-type validation (hard control before queueing).
+    # 2. Scope + scan-type validation (hard control before queueing). Path-based
+    #    scanners authorize against the explicit local-path allowlist; network
+    #    scanners authorize against the program scope allowlist.
+    scanner_cls = get_scanner_class(payload.job_type.value)
+    is_path_scan = scanner_cls is not None and getattr(scanner_cls, "target_kind", "network") == "path"
     try:
-        decision = validate_scan_request(db, program_id, payload.target, payload.job_type.value)
+        if is_path_scan:
+            decision = validate_path_scan_request(
+                db, program_id, payload.target, payload.job_type.value
+            )
+        else:
+            decision = validate_scan_request(
+                db, program_id, payload.target, payload.job_type.value
+            )
     except ScopeError as exc:
         record_audit(
             db,
@@ -77,6 +112,7 @@ def launch_scan(
         target=decision.normalized_target,
         status="queued",
         dry_run=dry_run,
+        timeout_seconds=payload.timeout_seconds,
     )
     db.add(job)
     db.commit()
@@ -102,7 +138,12 @@ def launch_scan(
 
 
 @router.get("/{job_id}", response_model=ScanJobOut)
-def get_scan(program_id: int, job_id: int, db: Session = Depends(get_db)):
+def get_scan(
+    program_id: int,
+    job_id: int,
+    db: Session = Depends(get_db),
+    _: Principal = Depends(ensure_program_access),
+):
     job = db.get(ScanJob, job_id)
     if not job or job.program_id != program_id:
         raise HTTPException(status_code=404, detail="Scan job not found")
@@ -110,7 +151,12 @@ def get_scan(program_id: int, job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/cancel", response_model=ScanJobOut)
-def cancel_scan(program_id: int, job_id: int, db: Session = Depends(get_db)):
+def cancel_scan(
+    program_id: int,
+    job_id: int,
+    db: Session = Depends(get_db),
+    _: Principal = Depends(require_role(ROLE_RESEARCHER, ROLE_TRIAGER)),
+):
     job = db.get(ScanJob, job_id)
     if not job or job.program_id != program_id:
         raise HTTPException(status_code=404, detail="Scan job not found")

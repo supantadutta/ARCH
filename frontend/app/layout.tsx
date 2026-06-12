@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { NavLink } from "@/components/ui";
+import { AuthStatus } from "@/components/AuthStatus";
 
 export const metadata: Metadata = {
   title: "AutoBugHunter",
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/audit" label="Audit Log" />
               <NavLink href="/settings" label="Settings" />
             </nav>
+            <AuthStatus />
             <div className="mt-8 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
               Dry-run is the default. Scans run only against explicitly authorized scope.
             </div>

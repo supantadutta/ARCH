@@ -5,13 +5,56 @@ import { api, Overview } from "@/lib/api";
 import { Card, StatCard, Badge, PageHeader } from "@/components/ui";
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"];
-const SEVERITY_ACCENT: Record<string, string> = {
-  critical: "text-red-600",
-  high: "text-orange-600",
-  medium: "text-amber-600",
-  low: "text-sky-600",
-  info: "text-slate-500",
+const SEVERITY_BAR: Record<string, string> = {
+  critical: "bg-red-500",
+  high: "bg-orange-500",
+  medium: "bg-amber-500",
+  low: "bg-sky-500",
+  info: "bg-slate-400",
 };
+
+// Simple horizontal bar chart (no external chart dependency).
+function SeverityChart({ data }: { data: Record<string, number> }) {
+  const max = Math.max(1, ...SEVERITY_ORDER.map((s) => data[s] ?? 0));
+  return (
+    <div className="space-y-2">
+      {SEVERITY_ORDER.map((sev) => {
+        const v = data[sev] ?? 0;
+        return (
+          <div key={sev} className="flex items-center gap-3 text-sm">
+            <span className="w-16 capitalize text-slate-500">{sev}</span>
+            <div className="h-4 flex-1 rounded bg-slate-100">
+              <div
+                className={`h-4 rounded ${SEVERITY_BAR[sev]}`}
+                style={{ width: `${(v / max) * 100}%` }}
+              />
+            </div>
+            <span className="w-8 text-right font-medium">{v}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatusChart({ data }: { data: Record<string, number> }) {
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...entries.map(([, v]) => v));
+  if (entries.length === 0) return <p className="text-sm text-slate-400">No findings yet.</p>;
+  return (
+    <div className="space-y-2">
+      {entries.map(([status, v]) => (
+        <div key={status} className="flex items-center gap-3 text-sm">
+          <span className="w-28 truncate text-slate-500">{status}</span>
+          <div className="h-4 flex-1 rounded bg-slate-100">
+            <div className="h-4 rounded bg-brand" style={{ width: `${(v / max) * 100}%` }} />
+          </div>
+          <span className="w-8 text-right font-medium">{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const [data, setData] = useState<Overview | null>(null);
@@ -37,23 +80,23 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <StatCard label="Total Programs" value={data.total_programs} />
         <StatCard label="Total Assets" value={data.total_assets} />
         <StatCard label="Running Scans" value={data.running_scans} accent="text-blue-600" />
         <StatCard label="Needs Review" value={data.needs_review_findings} accent="text-amber-600" />
+        <StatCard label="SLA Breached" value={data.sla_breached_findings ?? 0} accent="text-red-600" />
       </div>
 
-      <h2 className="mt-8 mb-3 text-lg font-semibold">Open Findings by Severity</h2>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-        {SEVERITY_ORDER.map((sev) => (
-          <StatCard
-            key={sev}
-            label={sev.toUpperCase()}
-            value={data.open_findings_by_severity[sev] ?? 0}
-            accent={SEVERITY_ACCENT[sev]}
-          />
-        ))}
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <h3 className="mb-4 font-semibold">Open Findings by Severity</h3>
+          <SeverityChart data={data.open_findings_by_severity} />
+        </Card>
+        <Card>
+          <h3 className="mb-4 font-semibold">Findings by Status</h3>
+          <StatusChart data={data.findings_by_status || {}} />
+        </Card>
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">

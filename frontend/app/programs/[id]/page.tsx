@@ -18,9 +18,9 @@ export default function ProgramDetailPage() {
   const load = () => {
     api.get<Program>(`/programs/${id}`).then(setProgram).catch((e) => setError(e.message));
     api.get<ScopeItem[]>(`/programs/${id}/scope`).then(setScope);
-    api.get<Asset[]>(`/programs/${id}/assets`).then(setAssets);
-    api.get<ScanJob[]>(`/programs/${id}/scans`).then(setScans);
-    api.get<Finding[]>(`/programs/${id}/findings`).then(setFindings);
+    api.list<Asset>(`/programs/${id}/assets`).then(setAssets);
+    api.list<ScanJob>(`/programs/${id}/scans`).then(setScans);
+    api.list<Finding>(`/programs/${id}/findings`).then(setFindings);
   };
   useEffect(() => {
     if (id) load();

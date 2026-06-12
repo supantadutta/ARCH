@@ -10,7 +10,7 @@ export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
 
   useEffect(() => {
-    if (selected) api.get<Asset[]>(`/programs/${selected}/assets`).then(setAssets);
+    if (selected) api.list<Asset>(`/programs/${selected}/assets`).then(setAssets);
   }, [selected]);
 
   return (

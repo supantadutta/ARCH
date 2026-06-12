@@ -24,7 +24,11 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.policy.scope_guard import ScopeError, validate_scan_request
+from app.policy.scope_guard import (
+    ScopeError,
+    validate_path_scan_request,
+    validate_scan_request,
+)
 from app.services.audit import record_audit
 
 
@@ -76,6 +80,10 @@ class BaseScanner:
     name: str = "base"
     binary: str | None = None
     scan_type: str = "recon"
+    # "network" targets (host/URL/IP) are authorized via the scope allowlist;
+    # "path" targets (local source dir / image ref) are authorized via the
+    # explicit AUTHORIZED_SCAN_PATHS allowlist + a repo/mobile_app scope entry.
+    target_kind: str = "network"
     # Tokens that must never appear in a constructed command — defence in depth
     # against accidental introduction of dangerous flags.
     FORBIDDEN_TOKENS = (";", "&&", "||", "|", "`", "$(", "rm ", "-rf", ">", "<")
@@ -126,17 +134,32 @@ class BaseScanner:
         raise NotImplementedError
 
     # -- Main entry point --------------------------------------------------
-    def run(self, target: str, dry_run: bool | None = None) -> ScannerResult:
-        """Validate, then run the scanner under all safety controls."""
+    def run(
+        self, target: str, dry_run: bool | None = None, timeout: int | None = None
+    ) -> ScannerResult:
+        """Validate, then run the scanner under all safety controls.
+
+        ``timeout`` overrides the global ``SCANNER_TIMEOUT_SECONDS`` for this run.
+        """
         effective_dry_run = settings.dry_run if dry_run is None else dry_run
+        self._timeout_override = timeout
         log_lines: list[str] = []
 
         def log(msg: str) -> None:
             log_lines.append(msg)
 
-        # 1. Scope + scan-type validation (hard control).
+        # 1. Scope + scan-type validation (hard control). Path-based scanners
+        #    (semgrep/gitleaks/trivy) authorize against the explicit local-path
+        #    allowlist; network scanners authorize against the scope allowlist.
         try:
-            decision = validate_scan_request(self.db, self.program_id, target, self.scan_type)
+            if self.target_kind == "path":
+                decision = validate_path_scan_request(
+                    self.db, self.program_id, target, self.scan_type
+                )
+            else:
+                decision = validate_scan_request(
+                    self.db, self.program_id, target, self.scan_type
+                )
         except ScopeError as exc:
             record_audit(
                 self.db,
@@ -204,19 +227,32 @@ class BaseScanner:
             result.logs = "\n".join(log_lines)
             return result
 
-        # Real execution path. Refuse if the binary is not installed.
-        if not self.binary or shutil.which(self.binary) is None:
-            result.error = f"Binary '{self.binary}' not available in this environment."
+        # Real execution path. The scanner must be explicitly enabled in
+        # settings AND its binary installed; otherwise it never runs.
+        if not settings.scanner_enabled(self.name):
+            result.error = (
+                f"Scanner '{self.name}' is disabled in settings "
+                f"(set ENABLE_{self.name.upper()}=true to allow it)."
+            )
             log(f"[{self.name}] {result.error}")
             result.logs = "\n".join(log_lines)
             return result
 
+        if not self.binary or shutil.which(self.binary) is None:
+            result.error = f"Binary '{self.binary}' not installed in this environment."
+            log(f"[{self.name}] {result.error}")
+            result.logs = "\n".join(log_lines)
+            return result
+
+        override = getattr(self, "_timeout_override", None)
+        timeout = max(int(override or settings.scanner_timeout_seconds), 1)
+        log(f"[{self.name}] executing with {timeout}s timeout")
         try:
             proc = subprocess.run(  # noqa: S603 — argv list, validated, shell=False
                 command,
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=timeout,
                 shell=False,
                 check=False,
             )
@@ -226,8 +262,9 @@ class BaseScanner:
             result.findings = self.parse_output(result)
             log(f"[{self.name}] exited with code {proc.returncode}")
         except subprocess.TimeoutExpired:
-            result.error = "Scanner timed out."
-            log(f"[{self.name}] timed out")
+            result.error = f"Scanner timed out after {timeout}s."
+            result.returncode = None
+            log(f"[{self.name}] timed out after {timeout}s")
         except Exception as exc:  # pragma: no cover - defensive
             result.error = str(exc)
             log(f"[{self.name}] error: {exc}")

@@ -17,6 +17,8 @@ class SemgrepScanner(BaseScanner):
     name = "semgrep"
     scan_type = "semgrep"
     binary = "semgrep"
+    # Operates on an explicitly authorized local source path only.
+    target_kind = "path"
 
     def build_command(self, target: str) -> list[str]:
         # ``target`` here is a local filesystem path to in-scope source code.

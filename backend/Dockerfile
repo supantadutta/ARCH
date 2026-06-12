@@ -19,4 +19,8 @@ RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
 
+# Container health: the API exposes an unauthenticated /health endpoint.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=5 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
 CMD ["./entrypoint.sh"]

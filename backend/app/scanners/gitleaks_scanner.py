@@ -14,6 +14,8 @@ class GitleaksScanner(BaseScanner):
     name = "gitleaks"
     scan_type = "gitleaks"
     binary = "gitleaks"
+    # Operates on an explicitly authorized local repo path only.
+    target_kind = "path"
 
     def build_command(self, target: str) -> list[str]:
         # ``target`` is a local repo path in scope.

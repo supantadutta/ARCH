@@ -34,6 +34,50 @@ findings, AI triage, reports and retests — with safety controls baked in as
 | **Audit logging** | Every program/scope/scan/finding/report action and every scope decision is recorded in an immutable `audit_logs` table (see below). |
 | **AI must not invent evidence** | The triage layer only reasons over existing finding data; high/critical or low-confidence findings always require manual review. |
 
+### Production features
+
+| Area | What's included |
+| --- | --- |
+| **Auth (JWT)** | `POST /auth/login` issues a JWT; requests authenticate with `Authorization: Bearer <jwt>` or the demo `X-API-Key`. |
+| **RBAC** | Roles `admin`, `triager`, `researcher`, `viewer`. Admins manage programs/users; researchers/triagers create findings, run scans, triage; viewers are read-only. |
+| **Program permissions** | A program's findings/assets/scans/reports are visible only to assigned members (`program_members`) and admins. |
+| **Pagination / search / filter** | Programs, assets, scans, findings and reports return `{items, total, limit, offset}` with `q`/status/severity filters. |
+| **SLA tracking** | Each finding gets an `sla_due_at` from its severity (configurable `SLA_DAYS_*`); breaches surfaced on the dashboard. |
+| **Dashboard charts** | Open-by-severity and by-status bar charts, plus an SLA-breached counter. |
+| **Retest workflow** | Request → manual verify → resolve/confirm; resolution is always a human, role-gated decision. |
+| **Notifications** | Pluggable placeholder (`log`/`webhook`) for finding-created, retest-requested, etc. |
+| **Job retry policy** | Celery retries transient infra errors with exponential backoff (`TASK_MAX_RETRIES`/`TASK_RETRY_BACKOFF`). Policy rejections are never retried. |
+| **Scanner timeouts** | Global `SCANNER_TIMEOUT_SECONDS` plus optional per-job `timeout_seconds`. |
+| **Exports** | All findings as CSV (`/programs/{id}/findings.csv`); program-wide Markdown report (`/programs/{id}/report.md`). |
+| **Docker health checks** | Healthchecks for postgres, redis, backend (`/health`), celery worker (`inspect ping`) and frontend. |
+
+**Demo accounts** (after seeding): `admin@localhost / admin12345` (admin), and
+`triager@localhost` / `researcher@localhost` / `viewer@localhost` (password
+`demo12345`), pre-assigned to the demo program.
+
+### Capabilities this platform deliberately does NOT build
+
+By design, AutoBugHunter contains **none** of the following, and will not — they
+are out of scope as a matter of policy:
+
+- ❌ Autonomous exploitation / exploit modules
+- ❌ Credential stuffing or credential attacks
+- ❌ Brute-force modules
+- ❌ Phishing modules
+- ❌ Malware modules
+- ❌ WAF-bypass automation
+- ❌ DoS / DDoS testing
+- ❌ Data extraction / exfiltration modules
+- ❌ Persistence modules
+- ❌ Privilege-escalation modules
+- ❌ Payload mutation for detection evasion
+
+What it **does** build is the safe, defensible workflow: safe recon, safe
+(passive) scanning, validation strictly from collected evidence, AI triage,
+deduplication, reporting, a dashboard, retesting, and audit logging. Any
+validation that could be risky is flagged **"manual review required"** for a
+human — the platform never performs destructive validation itself.
+
 ### Audited events
 
 The following are written to the `audit_logs` table (viewable on the **Audit Log**
@@ -227,37 +271,117 @@ Covered safety controls and core flows:
 - **Command allowlist** rejects non-allowed binaries and shell metacharacters.
 - **Audit logging** records program/scope/scan/finding/report events and
   rejected attempts.
+- **External scanners** are opt-in: disabled scanners refuse to run, dry-run
+  previews without enable/install, nuclei excludes intrusive tags, ZAP uses the
+  baseline binary only, and path scanners (semgrep/gitleaks/trivy) reject
+  unauthorized paths and path traversal.
 - Finding creation, AI triage mock response, and report generation.
 
 ---
 
 ## Scanners
 
-Wrappers live in `backend/app/scanners/`. Each one enforces scope, rate limits,
-command logging, stdout/stderr capture, result normalization and dry-run.
+Wrappers live in `backend/app/scanners/`. Each one enforces scope/path
+authorization, rate limits, a timeout, command logging, stdout/stderr/exit-code
+capture, result normalization and dry-run.
 
-| Scanner | Tool | Mode |
-| --- | --- | --- |
-| `recon_scanner.py` | pure Python (requests) | passive HTTP/HTTPS probing |
-| `nuclei_scanner.py` | nuclei | templates, intrusive tags excluded |
-| `zap_scanner.py` | zap-baseline.py | **baseline/passive only** |
-| `semgrep_scanner.py` | semgrep | static analysis (read-only) |
-| `gitleaks_scanner.py` | gitleaks | secret detection (records location, not secret) |
-| `trivy_scanner.py` | trivy | dependency/vuln scan (read-only) |
+| Scanner | Tool | Target | Safe default mode |
+| --- | --- | --- | --- |
+| `recon_scanner.py` | pure Python (requests) | network | passive HTTP/HTTPS probing |
+| `nuclei_scanner.py` | nuclei | network | non-intrusive templates only (intrusive tags excluded) |
+| `zap_scanner.py` | zap-baseline.py | network | **baseline/passive only** (no active attacks) |
+| `semgrep_scanner.py` | semgrep | local path | static analysis (read-only) |
+| `gitleaks_scanner.py` | gitleaks | local path | secret detection (records location, not the secret) |
+| `trivy_scanner.py` | trivy | local path | dependency/vuln scan (read-only) |
 
-For the MVP, recon runs with no external tools. `subfinder` / `httpx` /
-`katana` are noted as future, still scope-gated, passive integrations. Other
-scanners only execute when their binary is installed *and* `DRY_RUN=false`.
+### Opt-in & gating (external scanners)
+
+External scanners are **disabled by default**. A scanner executes for real only
+when **both** are true:
+
+1. It is **enabled** in settings — `ENABLE_NUCLEI`, `ENABLE_ZAP`,
+   `ENABLE_SEMGREP`, `ENABLE_GITLEAKS`, `ENABLE_TRIVY` (all `false` by default).
+2. Its **binary is installed** in the worker image.
+
+`recon` is pure-Python and always available. **Dry-run** (the default) previews
+the exact command without executing it, regardless of the flags above. Every
+run has a wall-clock timeout (`SCANNER_TIMEOUT_SECONDS`, default 600s) and
+stores stdout, stderr, exit code, logs and normalized findings on the scan job
+(viewable on the **Scan Jobs** page). Live scanner status (enabled / installed /
+runnable) is shown on the **Settings** page (`GET /api/v1/settings/scanners`).
+
+### Network vs. path targets
+
+- **Network** scanners (recon, nuclei, zap) authorize the target against the
+  program **scope allowlist**.
+- **Path** scanners (semgrep, gitleaks, trivy) operate only on **explicitly
+  authorized local paths**. A target path must (a) live under a root listed in
+  `AUTHORIZED_SCAN_PATHS` *and* (b) match an allowed `repo`/`mobile_app` scope
+  entry. Path traversal (`..`) is always rejected. With `AUTHORIZED_SCAN_PATHS`
+  empty (the default), local path scanning is disabled.
+
+Nuclei's intrusive template tags are excluded via `NUCLEI_EXCLUDED_TAGS`
+(`dos,fuzz,brute,intrusive,…`), and only the ZAP **baseline** (passive) scan is
+ever invoked. `subfinder` / `httpx` / `katana` remain noted as future,
+still-gated, passive integrations.
 
 ---
 
 ## AI triage abstraction
 
-`backend/app/ai_triage/` defines a provider interface (`base.py`), a deterministic
-`MockTriageProvider` (`mock_provider.py`) and a `TriageService` (`triage_service.py`).
-To plug in a real LLM, implement `AITriageProvider.triage()` and inject it into
-`TriageService`. The contract forbids inventing evidence — providers reason only
-over the supplied read-only `FindingContext`.
+`backend/app/ai_triage/` defines a provider interface (`base.py`) and three
+pluggable providers, selected via `AI_PROVIDER`:
+
+| Provider | `AI_PROVIDER` | Notes |
+| --- | --- | --- |
+| Mock | `mock` (default) | Deterministic, offline, no external calls |
+| OpenAI-compatible | `openai` | Any `/chat/completions` endpoint (`AI_OPENAI_*`) |
+| Local LLM (placeholder) | `local` | Self-hosted OpenAI-compatible endpoint (`AI_LOCAL_*`) |
+
+Triage returns **structured JSON** with exactly these keys: `title`, `severity`,
+`confidence`, `category`, `cwe`, `owasp`, `impact`, `remediation`,
+`evidence_used`, `report_draft`, `manual_review_required`
+(`GET /api/v1/findings/{id}/triage/structured`).
+
+### The AI must not invent evidence
+
+This is enforced, not just requested:
+
+- A strict system prompt instructs LLM providers to use only the finding's data
+  and to never fabricate evidence, URLs, payloads, users, credentials or impact,
+  and to give remediation guidance only (no exploitation steps).
+- Every provider's output passes through `enforce_grounding()`: each item in
+  `evidence_used` is kept **only if it actually appears in the finding's own
+  text**. Anything ungrounded is dropped and the finding is forced into
+  **manual review**. Findings with no concrete evidence always require manual
+  review and are never auto-confirmed.
+
+To add a provider, implement `AITriageProvider.triage()` and register it in
+`app/ai_triage/factory.py`.
+
+---
+
+## Deduplication
+
+`backend/app/dedup/` links duplicate findings using a purely read-only data
+comparison (no re-scanning). Two findings are duplicates when they share the
+**same asset** and **same category**, plus either a **similar title**
+(normalized similarity ≥ 0.85) or the **same scanner evidence**. The later
+finding is linked to the earliest matching one via `duplicate_of` and set to
+`closed`; the original is untouched. Endpoints:
+`GET /findings/{id}/duplicates`, `POST /findings/{id}/deduplicate`,
+`POST /programs/{id}/deduplicate`. In the UI, the **Find Duplicates** button on
+the finding page lists candidates and can link them.
+
+---
+
+## Reports
+
+The **Generate Bug Bounty Report** button produces a Markdown report built from
+**safe evidence only** (reproduction steps never include destructive or
+exploitative actions). Reports can be previewed on a dedicated page
+(`/reports/{id}`) and exported as `.md`
+(`GET /api/v1/reports/{id}/markdown`, or the in-app *Export Markdown* button).
 
 ---
 

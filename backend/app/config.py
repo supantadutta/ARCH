@@ -45,6 +45,43 @@ class Settings(BaseSettings):
     # handled as an explicit, opt-in exception for the demo flow.
     allow_private_targets: bool = False
 
+    # --- JWT authentication ----------------------------------------------
+    # Secret used to sign JWTs. MUST be overridden in any real deployment.
+    jwt_secret: str = "change-me-dev-secret"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440  # 24h
+
+    # Seed admin account created on first boot (change in production).
+    default_admin_email: str = "admin@localhost"
+    default_admin_password: str = "admin12345"
+
+    # --- SLA policy (days to remediate, per severity) --------------------
+    sla_days_critical: int = 3
+    sla_days_high: int = 7
+    sla_days_medium: int = 30
+    sla_days_low: int = 90
+    sla_days_info: int = 0  # 0 => no SLA tracked
+
+    def sla_days_for(self, severity: str) -> int:
+        """Return the SLA window (days) for a severity, 0 meaning untracked."""
+        return {
+            "critical": self.sla_days_critical,
+            "high": self.sla_days_high,
+            "medium": self.sla_days_medium,
+            "low": self.sla_days_low,
+            "info": self.sla_days_info,
+        }.get(severity, 0)
+
+    # --- Background job retry policy -------------------------------------
+    task_max_retries: int = 3
+    task_retry_backoff: int = 5  # seconds, exponential base
+
+    # --- Notifications (placeholder) -------------------------------------
+    # "log" writes notifications to the application log; "webhook" posts to
+    # NOTIFY_WEBHOOK_URL (placeholder, off by default).
+    notify_provider: str = "log"
+    notify_webhook_url: str = ""
+
     # --- Authorization ---------------------------------------------------
     # When True, every API request must present a valid API key in the
     # ``X-API-Key`` header. Enabled by default to enforce strict
@@ -84,6 +121,68 @@ class Settings(BaseSettings):
         "trivy",
         "ai_triage",
     )
+
+    # --- AI triage provider ----------------------------------------------
+    # Which triage provider to use: "mock" (default, offline, deterministic),
+    # "openai" (any OpenAI-compatible chat-completions endpoint), or "local"
+    # (placeholder for a self-hosted LLM, e.g. Ollama/vLLM). The mock provider
+    # keeps the platform fully runnable and safe with no external calls.
+    ai_provider: str = "mock"
+
+    # OpenAI-compatible provider settings. Used only when ai_provider="openai".
+    ai_openai_base_url: str = "https://api.openai.com/v1"
+    ai_openai_api_key: str = ""
+    ai_openai_model: str = "gpt-4o-mini"
+
+    # Local LLM provider settings (placeholder; ai_provider="local").
+    ai_local_base_url: str = "http://localhost:11434/v1"
+    ai_local_model: str = "llama3"
+
+    # Hard timeout (seconds) for any AI provider HTTP call.
+    ai_request_timeout: int = 30
+
+    # --- External scanner integration -----------------------------------
+    # Each external scanner is OPT-IN and disabled by default. A scanner only
+    # executes for real when it is BOTH enabled here AND its binary is
+    # installed. Recon is pure-Python and always available. Dry-run preview
+    # works regardless of these flags.
+    enable_nuclei: bool = False
+    enable_zap: bool = False
+    enable_semgrep: bool = False
+    enable_gitleaks: bool = False
+    enable_trivy: bool = False
+
+    # Per-scan wall-clock timeout (seconds) for external tools.
+    scanner_timeout_seconds: int = 600
+
+    # Nuclei: only run safe/non-intrusive templates by default. These tags are
+    # always excluded so intrusive checks never run.
+    nuclei_excluded_tags: str = "dos,fuzz,brute,intrusive,sqli-exploit,xss-exploit"
+
+    # Explicitly authorized LOCAL paths for path-based scanners (semgrep,
+    # gitleaks, trivy). Comma-separated absolute paths / roots. A target path
+    # must live under one of these roots or it is rejected. Empty => no local
+    # path scanning is permitted. This is the hard authorization gate for
+    # source/image scanning.
+    authorized_scan_paths: str = ""
+
+    @property
+    def authorized_scan_path_list(self) -> tuple[str, ...]:
+        """Parsed, normalized list of authorized local scan roots."""
+        return tuple(
+            p.strip().rstrip("/") for p in self.authorized_scan_paths.split(",") if p.strip()
+        )
+
+    def scanner_enabled(self, name: str) -> bool:
+        """Return whether a given external scanner is enabled in settings."""
+        return {
+            "recon": True,  # pure-Python, always available
+            "nuclei": self.enable_nuclei,
+            "zap_baseline": self.enable_zap,
+            "semgrep": self.enable_semgrep,
+            "gitleaks": self.enable_gitleaks,
+            "trivy": self.enable_trivy,
+        }.get(name, False)
 
 
 @lru_cache

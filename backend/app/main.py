@@ -27,7 +27,9 @@ from app.policy.scope_guard import ScopeError
 from app.routes import (
     assets,
     audit,
+    auth_routes,
     dashboard,
+    dedup,
     findings,
     programs,
     reports,
@@ -136,9 +138,14 @@ def health() -> dict:
     }
 
 
-# Every API router is mounted behind the API-key dependency — strict
-# authorization is applied uniformly across the whole API surface.
+# Auth routes are mounted WITHOUT the global auth dependency so that
+# /auth/login is reachable without credentials. Their own endpoints enforce
+# role checks individually.
 _prefix = settings.api_v1_prefix
+app.include_router(auth_routes.router, prefix=_prefix)
+
+# Every other API router is mounted behind authentication (JWT or API key) —
+# strict authorization is applied uniformly across the whole API surface.
 _auth = [Depends(require_api_key)]
 for module in (
     programs,
@@ -147,6 +154,7 @@ for module in (
     scans,
     findings,
     triage,
+    dedup,
     reports,
     retests,
     audit,
