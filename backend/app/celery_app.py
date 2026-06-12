@@ -8,7 +8,7 @@ celery_app = Celery(
     "autobughunter",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.scan_tasks"],
+    include=["app.tasks.scan_tasks", "app.advanced.tasks"],
 )
 
 celery_app.conf.update(

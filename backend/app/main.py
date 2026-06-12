@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import Base, engine
 from app.policy.scope_guard import ScopeError
 from app.routes import (
+    advanced,
     assets,
     audit,
     auth_routes,
@@ -162,5 +163,6 @@ for module in (
     audit,
     settings_routes,
     dashboard,
+    advanced,
 ):
     app.include_router(module.router, prefix=_prefix, dependencies=_auth)

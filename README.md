@@ -361,6 +361,35 @@ To add a provider, implement `AITriageProvider.triage()` and register it in
 
 ---
 
+## Advanced authorized modules
+
+Eight advanced modules under `backend/app/advanced/` extend the platform for
+deeper *authorized* testing. Every one is safe-by-design — scope-gated,
+authorized-test-accounts-only, no brute force / DoS / bulk download — and any
+risky outcome becomes a `needs_review` finding requiring manual approval.
+
+| Module | What it does (safely) |
+| --- | --- |
+| **AuthenticatedCrawler** | Logs in with an authorized test account (single attempt, never brute force), stores the session **encrypted**, and performs a small bounded read-only crawl to discover authenticated URLs/APIs. Default dry-run. |
+| **APISecurity** | Imports OpenAPI / Swagger / Postman collections into an API inventory, flags endpoints with object-id params (`user_id`, `order_id`, `invoice_id`, `team_id`, `account_id`…), and generates **safe** authorization test cases (no payloads). |
+| **AccessControlComparator** | With two authorized accounts, checks whether B can read A's in-scope objects via **read-only GET**. Compares status/size/JSON keys/sensitive fields, **redacts** evidence, caps object count (no bulk), marks `needs_review`. |
+| **PermissionMatrixTester** | Admin defines expected access per role (guest/user/manager/admin/custom); observed access is compared and **excess access** is flagged. No requests sent. |
+| **BusinessLogicAssistant** | AI generates **safe manual checklists** for signup, login, password reset, checkout, coupon, wallet, team invite, role change, file upload, subscription, refund, API key generation. The AI never sends requests — only plans/reviews. |
+| **WorkflowStateTester** | Models workflows as ordered states; detects skipped/repeated steps, expired-token reuse and invite reuse from observations. State-changing tests require manual approval. |
+| **PaymentWorkflowReview** | Sandbox/staging only. Detects payment params (`price`, `amount`, `discount`, `coupon`, `quantity`, `currency`, `plan_id`, `payment_status`, `refund_status`) and emits a **review checklist** — never performs real payment abuse. |
+| **SourceRouteAnalyzer** | On an **authorized local repo** only, statically extracts routes + auth/authorization markers (FastAPI/Flask/Express), flags routes missing authentication, and maps source routes to discovered live endpoints. |
+
+Secrets and sessions for test accounts are encrypted at rest (Fernet, key from
+`ADVANCED_SECRET_KEY`). Limits are configurable (`CRAWLER_MAX_PAGES`,
+`ACCESS_CONTROL_MAX_OBJECTS`, `EVIDENCE_MAX_BYTES`, `PAYMENT_SANDBOX_ONLY`). The
+**Advanced** dashboard page drives all of these. Routes live under
+`/api/v1/programs/{id}/…` (`test-accounts`, `api/import`, `api/endpoints`,
+`access-control/compare`, `permission-rules`, `permission-matrix/evaluate`,
+`business-logic/checklist`, `workflows`, `payment-review/checklist`,
+`source-routes/analyze`, `auth-crawl`).
+
+---
+
 ## Validation from evidence
 
 `backend/app/validation/` corroborates a finding using **only the evidence

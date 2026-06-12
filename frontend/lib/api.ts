@@ -238,6 +238,60 @@ export interface Overview {
   top_risky_assets: Asset[];
 }
 
+export interface TestAccount {
+  id: number;
+  program_id: number;
+  label: string;
+  role: string;
+  username?: string;
+  login_url?: string;
+  is_authorized: boolean;
+  has_secret: boolean;
+  has_session: boolean;
+  notes?: string;
+  created_at: string;
+}
+
+export interface ApiEndpoint {
+  id: number;
+  program_id: number;
+  method: string;
+  path: string;
+  source: string;
+  object_id_params?: string;
+  auth_required: string;
+  created_at: string;
+}
+
+export interface PermissionRule {
+  id: number;
+  program_id: number;
+  role: string;
+  resource: string;
+  action: string;
+  expected_access: string;
+}
+
+export interface Checklist {
+  id: number;
+  program_id: number;
+  kind: string;
+  title: string;
+  content_markdown: string;
+  created_at: string;
+}
+
+export interface SourceRoute {
+  id: number;
+  program_id: number;
+  file_path: string;
+  method: string;
+  route_path: string;
+  has_authentication: boolean;
+  has_authorization: boolean;
+  mapped_endpoint_id?: number | null;
+}
+
 export interface AuditLog {
   id: number;
   actor: string;

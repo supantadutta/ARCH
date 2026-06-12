@@ -334,6 +334,103 @@ class MemberOut(BaseModel):
     created_at: datetime
 
 
+# --------------------------------------------------------------------------
+# Advanced modules
+# --------------------------------------------------------------------------
+class TestAccountCreate(BaseModel):
+    label: str
+    role: str = "user"
+    username: str | None = None
+    # Secret is a JSON string of login form fields, stored ENCRYPTED at rest.
+    secret: str | None = None
+    login_url: str | None = None
+    is_authorized: bool = False
+    notes: str | None = None
+
+
+class TestAccountOut(BaseModel):
+    """Test account WITHOUT any secret/session material exposed."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    label: str
+    role: str
+    username: str | None = None
+    login_url: str | None = None
+    is_authorized: bool
+    has_secret: bool = False
+    has_session: bool = False
+    notes: str | None = None
+    created_at: datetime
+
+
+class ApiEndpointOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    method: str
+    path: str
+    source: str
+    object_id_params: str | None = None
+    auth_required: str
+    tags: str | None = None
+    created_at: datetime
+
+
+class PermissionRuleCreate(BaseModel):
+    role: str
+    resource: str
+    action: str = "GET"
+    expected_access: str = "deny"
+
+
+class PermissionRuleOut(PermissionRuleCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    created_at: datetime
+
+
+class WorkflowDefinitionCreate(BaseModel):
+    name: str
+    kind: str = "custom"
+    steps: list[str] = Field(default_factory=list)
+
+
+class WorkflowDefinitionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    name: str
+    kind: str
+    steps: str
+    created_at: datetime
+
+
+class ChecklistOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    kind: str
+    title: str
+    content_markdown: str
+    created_at: datetime
+
+
+class SourceRouteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    file_path: str
+    method: str
+    route_path: str
+    has_authentication: bool
+    has_authorization: bool
+    mapped_endpoint_id: int | None = None
+    created_at: datetime
+
+
 class TriageResult(BaseModel):
     """Structured response from the AI triage layer."""
 

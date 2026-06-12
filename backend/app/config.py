@@ -120,7 +120,28 @@ class Settings(BaseSettings):
         "gitleaks",
         "trivy",
         "ai_triage",
+        # Advanced authorized modules (still scope-gated, rate-limited, and
+        # — where they send requests — restricted to authorized test accounts).
+        "auth_crawl",
+        "access_control",
     )
+
+    # --- Advanced modules ------------------------------------------------
+    # Key used to encrypt test-account secrets / sessions at rest. If empty it
+    # is derived from JWT_SECRET. Set a dedicated key in production.
+    advanced_secret_key: str = ""
+
+    # Authenticated crawler limits (kept small and safe — never a bulk crawl).
+    crawler_max_pages: int = 25
+    crawler_max_depth: int = 2
+
+    # Access-control comparator caps (never bulk download).
+    access_control_max_objects: int = 20
+    # Maximum bytes of any response body retained as (redacted) evidence.
+    evidence_max_bytes: int = 2048
+
+    # Payment review modules operate only against sandbox/staging by default.
+    payment_sandbox_only: bool = True
 
     # --- AI triage provider ----------------------------------------------
     # Which triage provider to use: "mock" (default, offline, deterministic),

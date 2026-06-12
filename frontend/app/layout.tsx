@@ -25,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/assets" label="Assets" />
               <NavLink href="/scans" label="Scan Jobs" />
               <NavLink href="/findings" label="Findings" />
+              <NavLink href="/advanced" label="Advanced" />
               <NavLink href="/reports" label="Reports" />
               <NavLink href="/audit" label="Audit Log" />
               <NavLink href="/settings" label="Settings" />
