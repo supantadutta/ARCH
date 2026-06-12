@@ -85,6 +85,25 @@ class Settings(BaseSettings):
         "ai_triage",
     )
 
+    # --- AI triage provider ----------------------------------------------
+    # Which triage provider to use: "mock" (default, offline, deterministic),
+    # "openai" (any OpenAI-compatible chat-completions endpoint), or "local"
+    # (placeholder for a self-hosted LLM, e.g. Ollama/vLLM). The mock provider
+    # keeps the platform fully runnable and safe with no external calls.
+    ai_provider: str = "mock"
+
+    # OpenAI-compatible provider settings. Used only when ai_provider="openai".
+    ai_openai_base_url: str = "https://api.openai.com/v1"
+    ai_openai_api_key: str = ""
+    ai_openai_model: str = "gpt-4o-mini"
+
+    # Local LLM provider settings (placeholder; ai_provider="local").
+    ai_local_base_url: str = "http://localhost:11434/v1"
+    ai_local_model: str = "llama3"
+
+    # Hard timeout (seconds) for any AI provider HTTP call.
+    ai_request_timeout: int = 30
+
     # --- External scanner integration -----------------------------------
     # Each external scanner is OPT-IN and disabled by default. A scanner only
     # executes for real when it is BOTH enabled here AND its binary is

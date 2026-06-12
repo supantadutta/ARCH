@@ -286,6 +286,26 @@ class TriageResult(BaseModel):
     owasp: str
     business_impact: str
     remediation: str
+    # The exact pieces of *existing* evidence the assessment relied on. Providers
+    # may only list evidence that is actually present on the finding — this is
+    # how the "do not invent evidence" rule is made auditable.
+    evidence_used: list[str] = Field(default_factory=list)
     report_draft: str
     manual_review_required: bool
     ai_summary: str
+
+    def to_structured_json(self) -> dict:
+        """Return the canonical structured triage object with the required keys."""
+        return {
+            "title": self.title,
+            "severity": self.severity.value,
+            "confidence": self.confidence.value,
+            "category": self.category,
+            "cwe": self.cwe,
+            "owasp": self.owasp,
+            "impact": self.business_impact,
+            "remediation": self.remediation,
+            "evidence_used": list(self.evidence_used),
+            "report_draft": self.report_draft,
+            "manual_review_required": self.manual_review_required,
+        }

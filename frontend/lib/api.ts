@@ -131,9 +131,31 @@ export interface Finding {
   scanner_name?: string;
   raw_output?: string;
   ai_summary?: string;
+  duplicate_of?: number | null;
   manual_review_required: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface DuplicateCandidate {
+  finding_id: number;
+  title: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface TriageStructured {
+  title: string;
+  severity: string;
+  confidence: string;
+  category: string;
+  cwe: string;
+  owasp: string;
+  impact: string;
+  remediation: string;
+  evidence_used: string[];
+  report_draft: string;
+  manual_review_required: boolean;
 }
 
 export interface Report {

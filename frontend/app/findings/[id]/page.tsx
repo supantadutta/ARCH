@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { api, Finding, Report } from "@/lib/api";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { api, Finding, Report, DuplicateCandidate } from "@/lib/api";
 import { Card, Badge, Button, PageHeader } from "@/components/ui";
 
 const STATUSES = [
@@ -17,10 +18,13 @@ const STATUSES = [
 
 export default function FindingDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = Number(params.id);
   const [finding, setFinding] = useState<Finding | null>(null);
   const [report, setReport] = useState<Report | null>(null);
+  const [dupes, setDupes] = useState<DuplicateCandidate[] | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = () => api.get<Finding>(`/findings/${id}`).then(setFinding);
   useEffect(() => {
@@ -28,10 +32,17 @@ export default function FindingDetailPage() {
   }, [id]);
 
   const triage = async () => {
+    setBusy(true);
     setMsg("Running AI triage…");
-    await api.post(`/findings/${id}/triage`);
-    await load();
-    setMsg("AI triage applied.");
+    try {
+      await api.post(`/findings/${id}/triage`);
+      await load();
+      setMsg("AI triage applied (evidence-grounded; nothing invented).");
+    } catch (e: any) {
+      setMsg(`Triage failed: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const setStatus = async (status: string) => {
@@ -40,10 +51,28 @@ export default function FindingDetailPage() {
   };
 
   const genReport = async () => {
-    setMsg("Generating report…");
-    const r = await api.post<Report>(`/findings/${id}/report`);
-    setReport(r);
-    setMsg("Report generated.");
+    setBusy(true);
+    setMsg("Generating bug bounty report…");
+    try {
+      const r = await api.post<Report>(`/findings/${id}/report`);
+      setReport(r);
+      setMsg("Report generated.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const findDuplicates = async () => {
+    setMsg("Checking for duplicates…");
+    const res = await api.get<{ candidates: DuplicateCandidate[] }>(`/findings/${id}/duplicates`);
+    setDupes(res.candidates);
+    setMsg(res.candidates.length ? `${res.candidates.length} candidate duplicate(s) found.` : "No duplicates found.");
+  };
+
+  const markDuplicate = async () => {
+    await api.post(`/findings/${id}/deduplicate`);
+    await load();
+    setMsg("Linked to its earliest matching duplicate.");
   };
 
   if (!finding) return <p className="text-slate-400">Loading…</p>;
@@ -54,16 +83,54 @@ export default function FindingDetailPage() {
         title={finding.title}
         subtitle={`Finding #${finding.id} · ${finding.scanner_name || "manual"}`}
         action={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={triage}>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={triage} disabled={busy}>
               Run AI Triage
             </Button>
-            <Button onClick={genReport}>Generate Report</Button>
+            <Button variant="secondary" onClick={findDuplicates} disabled={busy}>
+              Find Duplicates
+            </Button>
+            <Button onClick={genReport} disabled={busy}>
+              Generate Bug Bounty Report
+            </Button>
           </div>
         }
       />
 
       {msg && <p className="mb-4 text-sm text-slate-500">{msg}</p>}
+
+      {finding.duplicate_of && (
+        <div className="mb-6 rounded-lg border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700">
+          🔁 Marked as a duplicate of{" "}
+          <Link href={`/findings/${finding.duplicate_of}`} className="text-brand hover:underline">
+            finding #{finding.duplicate_of}
+          </Link>
+          .
+        </div>
+      )}
+
+      {dupes && dupes.length > 0 && (
+        <Card className="mb-6">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="font-semibold">Candidate Duplicates</h3>
+            <Button variant="secondary" onClick={markDuplicate}>
+              Mark as duplicate of earliest
+            </Button>
+          </div>
+          <ul className="space-y-1 text-sm">
+            {dupes.map((d) => (
+              <li key={d.finding_id} className="flex items-center justify-between">
+                <Link href={`/findings/${d.finding_id}`} className="text-brand hover:underline">
+                  #{d.finding_id} {d.title}
+                </Link>
+                <span className="text-slate-400">
+                  score {d.score.toFixed(2)} · {d.reasons.join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {finding.manual_review_required && (
         <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
@@ -107,7 +174,23 @@ export default function FindingDetailPage() {
 
           {report && (
             <Card>
-              <h3 className="mb-2 font-semibold">Report Draft</h3>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="font-semibold">Bug Bounty Report</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => router.push(`/reports/${report.id}`)}
+                    className="text-xs text-brand hover:underline"
+                  >
+                    open preview
+                  </button>
+                  <button
+                    onClick={() => downloadMarkdown(report)}
+                    className="text-xs text-brand hover:underline"
+                  >
+                    export .md
+                  </button>
+                </div>
+              </div>
               <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-xs text-slate-700">
                 {report.content_markdown}
               </pre>
@@ -158,4 +241,15 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <dd className="font-medium">{value}</dd>
     </div>
   );
+}
+
+// Trigger a client-side download of the report's Markdown content.
+function downloadMarkdown(report: Report) {
+  const blob = new Blob([report.content_markdown], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `finding_${report.finding_id}_report.md`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

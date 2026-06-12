@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.ai_triage.base import AITriageProvider, FindingContext
-from app.ai_triage.mock_provider import MockTriageProvider
+from app.ai_triage.factory import get_provider
 from app.models import Finding
 from app.schemas.schemas import TriageResult
 from app.services.audit import record_audit
@@ -20,8 +20,8 @@ class TriageService:
     """Run AI triage against findings."""
 
     def __init__(self, provider: AITriageProvider | None = None):
-        # Default to the mock provider. A real LLM provider can be injected.
-        self.provider = provider or MockTriageProvider()
+        # Default to the settings-selected provider (mock unless configured).
+        self.provider = provider or get_provider()
 
     def build_context(self, finding: Finding) -> FindingContext:
         """Create the read-only context snapshot passed to the provider."""
@@ -55,7 +55,15 @@ class TriageService:
             finding.owasp = result.owasp
             finding.impact = result.business_impact
             finding.remediation = result.remediation
-            finding.ai_summary = result.ai_summary
+            # Persist the AI summary together with the grounded evidence it used,
+            # so the finding record itself shows exactly what the assessment
+            # relied on (and that it relied on nothing invented).
+            evidence_note = (
+                "\nEvidence used: " + " | ".join(result.evidence_used)
+                if result.evidence_used
+                else "\nEvidence used: none (manual review required)."
+            )
+            finding.ai_summary = result.ai_summary + evidence_note
             finding.manual_review_required = result.manual_review_required
             # Triage moves a new finding into the review pipeline; it never
             # auto-confirms.

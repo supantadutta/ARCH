@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, Report } from "@/lib/api";
 import { Card, PageHeader } from "@/components/ui";
 import { useProgram, ProgramSelector } from "@/components/useProgram";
+
+function exportMd(report: Report) {
+  const blob = new Blob([report.content_markdown], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `finding_${report.finding_id}_report.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function ReportsPage() {
   const { programs, selected, choose } = useProgram();
@@ -44,9 +55,22 @@ export default function ReportsPage() {
 
         <Card className="lg:col-span-2">
           {active ? (
-            <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap text-xs text-slate-700">
-              {active.content_markdown}
-            </pre>
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="font-semibold">{active.title}</h3>
+                <div className="flex gap-3 text-xs">
+                  <Link href={`/reports/${active.id}`} className="text-brand hover:underline">
+                    open full preview
+                  </Link>
+                  <button onClick={() => exportMd(active)} className="text-brand hover:underline">
+                    export .md
+                  </button>
+                </div>
+              </div>
+              <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap text-xs text-slate-700">
+                {active.content_markdown}
+              </pre>
+            </>
           ) : (
             <p className="text-sm text-slate-400">Select a report to preview its Markdown.</p>
           )}

@@ -308,11 +308,59 @@ still-gated, passive integrations.
 
 ## AI triage abstraction
 
-`backend/app/ai_triage/` defines a provider interface (`base.py`), a deterministic
-`MockTriageProvider` (`mock_provider.py`) and a `TriageService` (`triage_service.py`).
-To plug in a real LLM, implement `AITriageProvider.triage()` and inject it into
-`TriageService`. The contract forbids inventing evidence — providers reason only
-over the supplied read-only `FindingContext`.
+`backend/app/ai_triage/` defines a provider interface (`base.py`) and three
+pluggable providers, selected via `AI_PROVIDER`:
+
+| Provider | `AI_PROVIDER` | Notes |
+| --- | --- | --- |
+| Mock | `mock` (default) | Deterministic, offline, no external calls |
+| OpenAI-compatible | `openai` | Any `/chat/completions` endpoint (`AI_OPENAI_*`) |
+| Local LLM (placeholder) | `local` | Self-hosted OpenAI-compatible endpoint (`AI_LOCAL_*`) |
+
+Triage returns **structured JSON** with exactly these keys: `title`, `severity`,
+`confidence`, `category`, `cwe`, `owasp`, `impact`, `remediation`,
+`evidence_used`, `report_draft`, `manual_review_required`
+(`GET /api/v1/findings/{id}/triage/structured`).
+
+### The AI must not invent evidence
+
+This is enforced, not just requested:
+
+- A strict system prompt instructs LLM providers to use only the finding's data
+  and to never fabricate evidence, URLs, payloads, users, credentials or impact,
+  and to give remediation guidance only (no exploitation steps).
+- Every provider's output passes through `enforce_grounding()`: each item in
+  `evidence_used` is kept **only if it actually appears in the finding's own
+  text**. Anything ungrounded is dropped and the finding is forced into
+  **manual review**. Findings with no concrete evidence always require manual
+  review and are never auto-confirmed.
+
+To add a provider, implement `AITriageProvider.triage()` and register it in
+`app/ai_triage/factory.py`.
+
+---
+
+## Deduplication
+
+`backend/app/dedup/` links duplicate findings using a purely read-only data
+comparison (no re-scanning). Two findings are duplicates when they share the
+**same asset** and **same category**, plus either a **similar title**
+(normalized similarity ≥ 0.85) or the **same scanner evidence**. The later
+finding is linked to the earliest matching one via `duplicate_of` and set to
+`closed`; the original is untouched. Endpoints:
+`GET /findings/{id}/duplicates`, `POST /findings/{id}/deduplicate`,
+`POST /programs/{id}/deduplicate`. In the UI, the **Find Duplicates** button on
+the finding page lists candidates and can link them.
+
+---
+
+## Reports
+
+The **Generate Bug Bounty Report** button produces a Markdown report built from
+**safe evidence only** (reproduction steps never include destructive or
+exploitative actions). Reports can be previewed on a dedicated page
+(`/reports/{id}`) and exported as `.md`
+(`GET /api/v1/reports/{id}/markdown`, or the in-app *Export Markdown* button).
 
 ---
 
