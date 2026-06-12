@@ -23,7 +23,7 @@ def test_request_without_api_key_is_rejected(client):
     client.headers.pop("X-API-Key", None)
     resp = client.get("/api/v1/programs")
     assert resp.status_code == 401
-    assert "API key" in resp.json()["detail"]
+    assert "Authentication required" in resp.json()["detail"]
 
 
 def test_request_with_bad_api_key_is_rejected(client):

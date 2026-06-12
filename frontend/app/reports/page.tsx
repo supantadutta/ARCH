@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, Report } from "@/lib/api";
+import { api, auth, Report } from "@/lib/api";
 import { Card, PageHeader } from "@/components/ui";
 import { useProgram, ProgramSelector } from "@/components/useProgram";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 function exportMd(report: Report) {
   const blob = new Blob([report.content_markdown], { type: "text/markdown" });
@@ -16,13 +18,28 @@ function exportMd(report: Report) {
   URL.revokeObjectURL(url);
 }
 
+// Download the aggregated program-wide Markdown report.
+async function exportProgramMd(programId: number | null) {
+  if (!programId) return;
+  const headers: Record<string, string> = auth.token()
+    ? { Authorization: `Bearer ${auth.token()}` }
+    : { "X-API-Key": process.env.NEXT_PUBLIC_API_KEY || "dev-local-key" };
+  const res = await fetch(`${API_BASE}/programs/${programId}/report.md`, { headers });
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `program_${programId}_report.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export default function ReportsPage() {
   const { programs, selected, choose } = useProgram();
   const [reports, setReports] = useState<Report[]>([]);
   const [active, setActive] = useState<Report | null>(null);
 
   useEffect(() => {
-    if (selected) api.get<Report[]>(`/programs/${selected}/reports`).then(setReports);
+    if (selected) api.list<Report>(`/programs/${selected}/reports`).then(setReports);
   }, [selected]);
 
   return (
@@ -30,7 +47,18 @@ export default function ReportsPage() {
       <PageHeader
         title="Reports"
         subtitle="Markdown reports generated from confirmed findings"
-        action={<ProgramSelector programs={programs} selected={selected} onChange={choose} />}
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportProgramMd(selected)}
+              disabled={!selected}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            >
+              Export Program Report (.md)
+            </button>
+            <ProgramSelector programs={programs} selected={selected} onChange={choose} />
+          </div>
+        }
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

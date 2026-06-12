@@ -134,9 +134,15 @@ class BaseScanner:
         raise NotImplementedError
 
     # -- Main entry point --------------------------------------------------
-    def run(self, target: str, dry_run: bool | None = None) -> ScannerResult:
-        """Validate, then run the scanner under all safety controls."""
+    def run(
+        self, target: str, dry_run: bool | None = None, timeout: int | None = None
+    ) -> ScannerResult:
+        """Validate, then run the scanner under all safety controls.
+
+        ``timeout`` overrides the global ``SCANNER_TIMEOUT_SECONDS`` for this run.
+        """
         effective_dry_run = settings.dry_run if dry_run is None else dry_run
+        self._timeout_override = timeout
         log_lines: list[str] = []
 
         def log(msg: str) -> None:
@@ -238,7 +244,8 @@ class BaseScanner:
             result.logs = "\n".join(log_lines)
             return result
 
-        timeout = max(int(settings.scanner_timeout_seconds), 1)
+        override = getattr(self, "_timeout_override", None)
+        timeout = max(int(override or settings.scanner_timeout_seconds), 1)
         log(f"[{self.name}] executing with {timeout}s timeout")
         try:
             proc = subprocess.run(  # noqa: S603 — argv list, validated, shell=False

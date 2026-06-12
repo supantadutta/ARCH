@@ -5,16 +5,43 @@
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-// Strict authorization: the dashboard authenticates with an API key sent on
-// every request. Must match the backend's API_KEY.
+// Strict authorization. The dashboard prefers a JWT (from /auth/login) and
+// falls back to the demo API key so it works out of the box. Tokens are stored
+// in localStorage in the browser.
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "dev-local-key";
+const TOKEN_KEY = "abh.token";
+const ROLE_KEY = "abh.role";
+const EMAIL_KEY = "abh.email";
+
+export const auth = {
+  token: () => (typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null),
+  role: () => (typeof window !== "undefined" ? localStorage.getItem(ROLE_KEY) : null),
+  email: () => (typeof window !== "undefined" ? localStorage.getItem(EMAIL_KEY) : null),
+  isLoggedIn: () => typeof window !== "undefined" && !!localStorage.getItem(TOKEN_KEY),
+  set: (token: string, role: string, email: string) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(ROLE_KEY, role);
+    localStorage.setItem(EMAIL_KEY, email);
+  },
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ROLE_KEY);
+    localStorage.removeItem(EMAIL_KEY);
+  },
+};
+
+function authHeaders(): Record<string, string> {
+  const token = auth.token();
+  // A logged-in JWT takes precedence; otherwise use the demo API key.
+  return token ? { Authorization: `Bearer ${token}` } : { "X-API-Key": API_KEY };
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": API_KEY,
+      ...authHeaders(),
       ...(options.headers || {}),
     },
     cache: "no-store",
@@ -37,12 +64,39 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(p: string) => request<T>(p),
+  // Convenience: unwrap a paginated list endpoint to its items array.
+  list: <T>(p: string) => request<Page<T>>(p).then((r) => r.items),
+  page: <T>(p: string) => request<Page<T>>(p),
   post: <T>(p: string, body?: unknown) =>
     request<T>(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(p: string, body?: unknown) =>
     request<T>(p, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(p: string) => request<T>(p, { method: "DELETE" }),
 };
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface LoginResult {
+  access_token: string;
+  token_type: string;
+  role: string;
+  email: string;
+}
+
+// Log in and persist the JWT. Returns the role.
+export async function login(email: string, password: string): Promise<LoginResult> {
+  const res = await request<LoginResult>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  auth.set(res.access_token, res.role, res.email);
+  return res;
+}
 
 // ---- Types -------------------------------------------------------------
 export interface Program {
@@ -133,6 +187,7 @@ export interface Finding {
   ai_summary?: string;
   duplicate_of?: number | null;
   manual_review_required: boolean;
+  sla_due_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -172,8 +227,10 @@ export interface Overview {
   total_programs: number;
   total_assets: number;
   open_findings_by_severity: Record<string, number>;
+  findings_by_status: Record<string, number>;
   running_scans: number;
   needs_review_findings: number;
+  sla_breached_findings: number;
   kill_switch_enabled: boolean;
   recent_scan_jobs: ScanJob[];
   top_risky_assets: Asset[];

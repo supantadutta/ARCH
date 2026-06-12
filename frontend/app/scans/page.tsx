@@ -18,7 +18,7 @@ export default function ScansPage() {
   const [logTab, setLogTab] = useState<"logs" | "stdout" | "stderr">("logs");
 
   const load = () => {
-    if (selected) api.get<ScanJob[]>(`/programs/${selected}/scans`).then(setJobs);
+    if (selected) api.list<ScanJob>(`/programs/${selected}/scans`).then(setJobs);
   };
 
   // Fetch the freshest copy of a job (logs/stdout/stderr/exit code) on open.

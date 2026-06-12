@@ -149,6 +149,8 @@ class ScanJobCreate(BaseModel):
     target: str
     # Defaults to None so the server falls back to the global DRY_RUN setting.
     dry_run: bool | None = None
+    # Optional per-job scanner timeout (seconds); falls back to the global setting.
+    timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
 
 
 class ScanJobOut(BaseModel):
@@ -159,6 +161,7 @@ class ScanJobOut(BaseModel):
     status: str
     target: str
     dry_run: bool
+    timeout_seconds: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     logs: str | None = None
@@ -214,6 +217,7 @@ class FindingOut(FindingBase):
     ai_summary: str | None = None
     duplicate_of: int | None = None
     manual_review_required: bool
+    sla_due_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -273,6 +277,59 @@ class SystemSettingOut(BaseModel):
 
 class KillSwitchUpdate(BaseModel):
     enabled: bool = Field(..., description="Enable or disable the global kill switch")
+
+
+class Page(BaseModel):
+    """Generic pagination envelope returned by list endpoints."""
+
+    items: list
+    total: int
+    limit: int
+    offset: int
+
+
+# --------------------------------------------------------------------------
+# Auth / users / membership
+# --------------------------------------------------------------------------
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    email: str
+
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+    full_name: str | None = None
+    role: str = "viewer"
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    email: str
+    full_name: str | None = None
+    role: str
+    is_active: bool
+    created_at: datetime
+
+
+class MemberCreate(BaseModel):
+    user_id: int
+
+
+class MemberOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    program_id: int
+    user_id: int
+    created_at: datetime
 
 
 class TriageResult(BaseModel):

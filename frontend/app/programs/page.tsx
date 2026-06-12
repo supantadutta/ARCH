@@ -11,7 +11,7 @@ export default function ProgramsPage() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => api.get<Program[]>("/programs").then(setPrograms).catch((e) => setError(e.message));
+  const load = () => api.list<Program>("/programs").then(setPrograms).catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, []);

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -25,15 +26,33 @@ from app.database import Base
 
 
 class User(Base):
-    """Platform operator. Authentication is intentionally minimal for the MVP."""
+    """Platform operator with a role and (hashed) password for JWT login."""
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    role: Mapped[str] = mapped_column(String(50), default="analyst")
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # role: admin, triager, researcher, viewer
+    role: Mapped[str] = mapped_column(String(50), default="viewer")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProgramMember(Base):
+    """Assignment of a user to a program.
+
+    Program findings are visible only to assigned members (and admins). This is
+    the access-control join table behind per-program permissions.
+    """
+
+    __tablename__ = "program_members"
+    __table_args__ = (UniqueConstraint("program_id", "user_id", name="uq_program_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -119,6 +138,9 @@ class ScanJob(Base):
     status: Mapped[str] = mapped_column(String(50), default="queued", index=True)
     target: Mapped[str] = mapped_column(String(512))
     dry_run: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Optional per-job scanner timeout (seconds); falls back to the global
+    # SCANNER_TIMEOUT_SECONDS when null.
+    timeout_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     logs: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -164,6 +186,8 @@ class Finding(Base):
     # Any potentially risky validation must set this flag true so a human
     # confirms before further action.
     manual_review_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    # SLA deadline computed from severity at creation (null => untracked).
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

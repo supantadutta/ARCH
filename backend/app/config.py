@@ -45,6 +45,43 @@ class Settings(BaseSettings):
     # handled as an explicit, opt-in exception for the demo flow.
     allow_private_targets: bool = False
 
+    # --- JWT authentication ----------------------------------------------
+    # Secret used to sign JWTs. MUST be overridden in any real deployment.
+    jwt_secret: str = "change-me-dev-secret"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440  # 24h
+
+    # Seed admin account created on first boot (change in production).
+    default_admin_email: str = "admin@localhost"
+    default_admin_password: str = "admin12345"
+
+    # --- SLA policy (days to remediate, per severity) --------------------
+    sla_days_critical: int = 3
+    sla_days_high: int = 7
+    sla_days_medium: int = 30
+    sla_days_low: int = 90
+    sla_days_info: int = 0  # 0 => no SLA tracked
+
+    def sla_days_for(self, severity: str) -> int:
+        """Return the SLA window (days) for a severity, 0 meaning untracked."""
+        return {
+            "critical": self.sla_days_critical,
+            "high": self.sla_days_high,
+            "medium": self.sla_days_medium,
+            "low": self.sla_days_low,
+            "info": self.sla_days_info,
+        }.get(severity, 0)
+
+    # --- Background job retry policy -------------------------------------
+    task_max_retries: int = 3
+    task_retry_backoff: int = 5  # seconds, exponential base
+
+    # --- Notifications (placeholder) -------------------------------------
+    # "log" writes notifications to the application log; "webhook" posts to
+    # NOTIFY_WEBHOOK_URL (placeholder, off by default).
+    notify_provider: str = "log"
+    notify_webhook_url: str = ""
+
     # --- Authorization ---------------------------------------------------
     # When True, every API request must present a valid API key in the
     # ``X-API-Key`` header. Enabled by default to enforce strict

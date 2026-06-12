@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.ai_triage import AITriageError, TriageService, available_providers, get_provider
+from app.auth import ROLE_RESEARCHER, ROLE_TRIAGER, Principal, require_role
 from app.config import settings
 from app.database import get_db
 from app.models import Finding
@@ -15,7 +16,12 @@ router = APIRouter(prefix="/findings", tags=["triage"])
 
 
 @router.post("/{finding_id}/triage", response_model=FindingOut)
-def triage_finding(finding_id: int, provider: str | None = None, db: Session = Depends(get_db)):
+def triage_finding(
+    finding_id: int,
+    provider: str | None = None,
+    db: Session = Depends(get_db),
+    _: Principal = Depends(require_role(ROLE_TRIAGER, ROLE_RESEARCHER)),
+):
     """Run AI triage and persist the enriched finding.
 
     ``provider`` optionally overrides the configured provider (mock/openai/local).

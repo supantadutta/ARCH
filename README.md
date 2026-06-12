@@ -34,6 +34,27 @@ findings, AI triage, reports and retests — with safety controls baked in as
 | **Audit logging** | Every program/scope/scan/finding/report action and every scope decision is recorded in an immutable `audit_logs` table (see below). |
 | **AI must not invent evidence** | The triage layer only reasons over existing finding data; high/critical or low-confidence findings always require manual review. |
 
+### Production features
+
+| Area | What's included |
+| --- | --- |
+| **Auth (JWT)** | `POST /auth/login` issues a JWT; requests authenticate with `Authorization: Bearer <jwt>` or the demo `X-API-Key`. |
+| **RBAC** | Roles `admin`, `triager`, `researcher`, `viewer`. Admins manage programs/users; researchers/triagers create findings, run scans, triage; viewers are read-only. |
+| **Program permissions** | A program's findings/assets/scans/reports are visible only to assigned members (`program_members`) and admins. |
+| **Pagination / search / filter** | Programs, assets, scans, findings and reports return `{items, total, limit, offset}` with `q`/status/severity filters. |
+| **SLA tracking** | Each finding gets an `sla_due_at` from its severity (configurable `SLA_DAYS_*`); breaches surfaced on the dashboard. |
+| **Dashboard charts** | Open-by-severity and by-status bar charts, plus an SLA-breached counter. |
+| **Retest workflow** | Request → manual verify → resolve/confirm; resolution is always a human, role-gated decision. |
+| **Notifications** | Pluggable placeholder (`log`/`webhook`) for finding-created, retest-requested, etc. |
+| **Job retry policy** | Celery retries transient infra errors with exponential backoff (`TASK_MAX_RETRIES`/`TASK_RETRY_BACKOFF`). Policy rejections are never retried. |
+| **Scanner timeouts** | Global `SCANNER_TIMEOUT_SECONDS` plus optional per-job `timeout_seconds`. |
+| **Exports** | All findings as CSV (`/programs/{id}/findings.csv`); program-wide Markdown report (`/programs/{id}/report.md`). |
+| **Docker health checks** | Healthchecks for postgres, redis, backend (`/health`), celery worker (`inspect ping`) and frontend. |
+
+**Demo accounts** (after seeding): `admin@localhost / admin12345` (admin), and
+`triager@localhost` / `researcher@localhost` / `viewer@localhost` (password
+`demo12345`), pre-assigned to the demo program.
+
 ### Capabilities this platform deliberately does NOT build
 
 By design, AutoBugHunter contains **none** of the following, and will not — they

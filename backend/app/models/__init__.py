@@ -6,6 +6,7 @@ from app.models.models import (  # noqa: F401
     Evidence,
     Finding,
     Program,
+    ProgramMember,
     Report,
     RetestTask,
     ScanJob,
