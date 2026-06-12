@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import Base, engine
 from app.policy.scope_guard import ScopeError
 from app.routes import (
+    advanced,
     assets,
     audit,
     auth_routes,
@@ -38,6 +39,7 @@ from app.routes import (
     scope,
     settings as settings_routes,
     triage,
+    validation,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -154,11 +156,13 @@ for module in (
     scans,
     findings,
     triage,
+    validation,
     dedup,
     reports,
     retests,
     audit,
     settings_routes,
     dashboard,
+    advanced,
 ):
     app.include_router(module.router, prefix=_prefix, dependencies=_auth)

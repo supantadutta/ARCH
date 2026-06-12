@@ -186,6 +186,12 @@ class Finding(Base):
     # Any potentially risky validation must set this flag true so a human
     # confirms before further action.
     manual_review_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Evidence-based validation outcome (set by the validation module). One of:
+    # unvalidated, evidence_validated, insufficient_evidence, manual_review_required.
+    # Validation is *passive* — it reasons only over evidence already collected and
+    # never re-attacks or actively probes the target.
+    validation_state: Mapped[str] = mapped_column(String(32), default="unvalidated")
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # SLA deadline computed from severity at creation (null => untracked).
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -270,3 +276,116 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ==========================================================================
+# Advanced authorized bug-hunting modules
+# ==========================================================================
+class TestAccount(Base):
+    """An AUTHORIZED test account used by the authenticated modules.
+
+    Credentials and session tokens are stored encrypted at rest. An account is
+    only usable once an operator explicitly marks it ``is_authorized``. These
+    are deliberately provided test accounts — the platform never brute-forces or
+    uses real end-user credentials.
+    """
+
+    __tablename__ = "test_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    # role: guest, user, manager, admin, or a custom string
+    role: Mapped[str] = mapped_column(String(64), default="user")
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    encrypted_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    login_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Encrypted session material captured after an authorized login.
+    encrypted_session: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ApiEndpoint(Base):
+    """An API endpoint in the inventory (imported or discovered)."""
+
+    __tablename__ = "api_endpoints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    method: Mapped[str] = mapped_column(String(10), default="GET")
+    path: Mapped[str] = mapped_column(String(1024))
+    # source: openapi, swagger, postman, crawl, manual
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    # Comma-separated object-id parameters detected (e.g. "user_id,order_id").
+    object_id_params: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # auth_required: yes, no, unknown
+    auth_required: Mapped[str] = mapped_column(String(16), default="unknown")
+    tags: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PermissionRule(Base):
+    """Expected access for a role against a resource/action (permission matrix)."""
+
+    __tablename__ = "permission_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(64))
+    resource: Mapped[str] = mapped_column(String(512))  # endpoint path / resource name
+    action: Mapped[str] = mapped_column(String(16), default="GET")
+    # expected_access: allow, deny
+    expected_access: Mapped[str] = mapped_column(String(16), default="deny")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WorkflowDefinition(Base):
+    """An ordered multi-step workflow used by the workflow-state tester."""
+
+    __tablename__ = "workflow_definitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(64), default="custom")
+    # Ordered step names stored as a JSON array string.
+    steps: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Checklist(Base):
+    """A generated, human-driven safe test checklist (business logic / payments)."""
+
+    __tablename__ = "checklists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(64), default="business_logic")
+    title: Mapped[str] = mapped_column(String(512))
+    content_markdown: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SourceRoute(Base):
+    """A route extracted from an authorized local source repository."""
+
+    __tablename__ = "source_routes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="CASCADE"), index=True)
+    file_path: Mapped[str] = mapped_column(String(1024))
+    method: Mapped[str] = mapped_column(String(10), default="GET")
+    route_path: Mapped[str] = mapped_column(String(1024))
+    has_authentication: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_authorization: Mapped[bool] = mapped_column(Boolean, default=False)
+    middleware: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mapped_endpoint_id: Mapped[int | None] = mapped_column(
+        ForeignKey("api_endpoints.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+

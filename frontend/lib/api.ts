@@ -187,6 +187,8 @@ export interface Finding {
   ai_summary?: string;
   duplicate_of?: number | null;
   manual_review_required: boolean;
+  validation_state?: string;
+  validated_at?: string | null;
   sla_due_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -234,6 +236,60 @@ export interface Overview {
   kill_switch_enabled: boolean;
   recent_scan_jobs: ScanJob[];
   top_risky_assets: Asset[];
+}
+
+export interface TestAccount {
+  id: number;
+  program_id: number;
+  label: string;
+  role: string;
+  username?: string;
+  login_url?: string;
+  is_authorized: boolean;
+  has_secret: boolean;
+  has_session: boolean;
+  notes?: string;
+  created_at: string;
+}
+
+export interface ApiEndpoint {
+  id: number;
+  program_id: number;
+  method: string;
+  path: string;
+  source: string;
+  object_id_params?: string;
+  auth_required: string;
+  created_at: string;
+}
+
+export interface PermissionRule {
+  id: number;
+  program_id: number;
+  role: string;
+  resource: string;
+  action: string;
+  expected_access: string;
+}
+
+export interface Checklist {
+  id: number;
+  program_id: number;
+  kind: string;
+  title: string;
+  content_markdown: string;
+  created_at: string;
+}
+
+export interface SourceRoute {
+  id: number;
+  program_id: number;
+  file_path: string;
+  method: string;
+  route_path: string;
+  has_authentication: boolean;
+  has_authorization: boolean;
+  mapped_endpoint_id?: number | null;
 }
 
 export interface AuditLog {
