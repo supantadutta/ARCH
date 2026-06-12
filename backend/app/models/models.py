@@ -186,6 +186,12 @@ class Finding(Base):
     # Any potentially risky validation must set this flag true so a human
     # confirms before further action.
     manual_review_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Evidence-based validation outcome (set by the validation module). One of:
+    # unvalidated, evidence_validated, insufficient_evidence, manual_review_required.
+    # Validation is *passive* — it reasons only over evidence already collected and
+    # never re-attacks or actively probes the target.
+    validation_state: Mapped[str] = mapped_column(String(32), default="unvalidated")
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # SLA deadline computed from severity at creation (null => untracked).
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

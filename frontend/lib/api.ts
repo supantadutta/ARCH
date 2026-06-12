@@ -187,6 +187,8 @@ export interface Finding {
   ai_summary?: string;
   duplicate_of?: number | null;
   manual_review_required: boolean;
+  validation_state?: string;
+  validated_at?: string | null;
   sla_due_at?: string | null;
   created_at: string;
   updated_at: string;

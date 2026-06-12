@@ -361,6 +361,26 @@ To add a provider, implement `AITriageProvider.triage()` and register it in
 
 ---
 
+## Validation from evidence
+
+`backend/app/validation/` corroborates a finding using **only the evidence
+already collected** — it never re-scans, re-requests, exploits, or actively
+probes a target. It records an outcome on `finding.validation_state`:
+
+- `evidence_validated` — concrete evidence supports a low-risk, high-confidence
+  finding (a human still confirms the lifecycle status);
+- `manual_review_required` — evidence exists but the finding is high/critical or
+  low-confidence, so a person must validate it;
+- `insufficient_evidence` — no machine-collected evidence; cannot auto-validate.
+
+Validation **annotates** a finding; it never auto-confirms one. Confirmation
+stays a deliberate, role-gated human action — manual approval is always required
+for risky validation. Endpoints: `POST /findings/{id}/validate`,
+`GET /findings/{id}/validation` (preview), `POST /programs/{id}/validate`. In the
+UI, the **Validate from Evidence** button runs it on the finding page.
+
+---
+
 ## Deduplication
 
 `backend/app/dedup/` links duplicate findings using a purely read-only data

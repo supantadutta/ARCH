@@ -217,6 +217,8 @@ class FindingOut(FindingBase):
     ai_summary: str | None = None
     duplicate_of: int | None = None
     manual_review_required: bool
+    validation_state: str = "unvalidated"
+    validated_at: datetime | None = None
     sla_due_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

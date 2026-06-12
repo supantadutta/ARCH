@@ -38,6 +38,7 @@ from app.routes import (
     scope,
     settings as settings_routes,
     triage,
+    validation,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -154,6 +155,7 @@ for module in (
     scans,
     findings,
     triage,
+    validation,
     dedup,
     reports,
     retests,

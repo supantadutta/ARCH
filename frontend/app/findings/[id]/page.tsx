@@ -45,6 +45,20 @@ export default function FindingDetailPage() {
     }
   };
 
+  const validate = async () => {
+    setBusy(true);
+    setMsg("Validating from evidence (passive; no re-scanning)…");
+    try {
+      await api.post(`/findings/${id}/validate`);
+      await load();
+      setMsg("Validation complete — outcome recorded (manual approval still required for risky findings).");
+    } catch (e: any) {
+      setMsg(`Validation failed: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const setStatus = async (status: string) => {
     await api.patch(`/findings/${id}`, { status });
     load();
@@ -86,6 +100,9 @@ export default function FindingDetailPage() {
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={triage} disabled={busy}>
               Run AI Triage
+            </Button>
+            <Button variant="secondary" onClick={validate} disabled={busy}>
+              Validate from Evidence
             </Button>
             <Button variant="secondary" onClick={findDuplicates} disabled={busy}>
               Find Duplicates
@@ -205,6 +222,10 @@ export default function FindingDetailPage() {
               <Row label="Severity" value={<Badge kind="severity" value={finding.severity} />} />
               <Row label="Confidence" value={finding.confidence} />
               <Row label="Status" value={<Badge kind="status" value={finding.status} />} />
+              <Row
+                label="Validation"
+                value={<span className="capitalize">{(finding.validation_state || "unvalidated").replace(/_/g, " ")}</span>}
+              />
               <Row label="Category" value={finding.category || "—"} />
               <Row label="CWE" value={finding.cwe || "—"} />
               <Row label="OWASP" value={finding.owasp || "—"} />
