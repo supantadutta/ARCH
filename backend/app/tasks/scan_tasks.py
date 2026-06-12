@@ -87,7 +87,11 @@ def run_scan_job(self, scan_job_id: int) -> dict:
         scanner = scanner_cls(db, job.program_id)
         result = scanner.run(job.target, dry_run=job.dry_run)
 
+        # Persist the full raw outcome for traceability.
         job.logs = result.logs
+        job.stdout = (result.stdout or "")[:100000] or None
+        job.stderr = (result.stderr or "")[:100000] or None
+        job.exit_code = result.returncode
         if result.error:
             job.status = "failed"
             job.error_message = result.error

@@ -89,8 +89,28 @@ export interface ScanJob {
   started_at?: string;
   finished_at?: string;
   logs?: string;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number | null;
   error_message?: string;
   created_at: string;
+}
+
+export interface ScannerStatus {
+  name: string;
+  enabled: boolean;
+  installed: boolean;
+  binary?: string | null;
+  target_kind: string;
+  default_mode: string;
+  runnable: boolean;
+}
+
+export interface ScannerStatusResponse {
+  scanners: ScannerStatus[];
+  timeout_seconds: number;
+  authorized_scan_paths: string[];
+  dry_run_default: boolean;
 }
 
 export interface Finding {

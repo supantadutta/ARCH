@@ -14,7 +14,12 @@ from app.auth import require_api_key
 from app.config import settings
 from app.database import get_db
 from app.models import Program, ScanJob
-from app.policy.scope_guard import ScopeError, validate_scan_request
+from app.policy.scope_guard import (
+    ScopeError,
+    validate_path_scan_request,
+    validate_scan_request,
+)
+from app.scanners.registry import get_scanner_class
 from app.schemas.schemas import ScanJobCreate, ScanJobOut
 from app.services.audit import record_audit
 from app.services.killswitch import is_kill_switch_enabled
@@ -55,9 +60,20 @@ def launch_scan(
         )
         raise HTTPException(status_code=423, detail="Global kill switch is engaged; scanning disabled.")
 
-    # 2. Scope + scan-type validation (hard control before queueing).
+    # 2. Scope + scan-type validation (hard control before queueing). Path-based
+    #    scanners authorize against the explicit local-path allowlist; network
+    #    scanners authorize against the program scope allowlist.
+    scanner_cls = get_scanner_class(payload.job_type.value)
+    is_path_scan = scanner_cls is not None and getattr(scanner_cls, "target_kind", "network") == "path"
     try:
-        decision = validate_scan_request(db, program_id, payload.target, payload.job_type.value)
+        if is_path_scan:
+            decision = validate_path_scan_request(
+                db, program_id, payload.target, payload.job_type.value
+            )
+        else:
+            decision = validate_scan_request(
+                db, program_id, payload.target, payload.job_type.value
+            )
     except ScopeError as exc:
         record_audit(
             db,

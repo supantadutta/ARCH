@@ -85,6 +85,49 @@ class Settings(BaseSettings):
         "ai_triage",
     )
 
+    # --- External scanner integration -----------------------------------
+    # Each external scanner is OPT-IN and disabled by default. A scanner only
+    # executes for real when it is BOTH enabled here AND its binary is
+    # installed. Recon is pure-Python and always available. Dry-run preview
+    # works regardless of these flags.
+    enable_nuclei: bool = False
+    enable_zap: bool = False
+    enable_semgrep: bool = False
+    enable_gitleaks: bool = False
+    enable_trivy: bool = False
+
+    # Per-scan wall-clock timeout (seconds) for external tools.
+    scanner_timeout_seconds: int = 600
+
+    # Nuclei: only run safe/non-intrusive templates by default. These tags are
+    # always excluded so intrusive checks never run.
+    nuclei_excluded_tags: str = "dos,fuzz,brute,intrusive,sqli-exploit,xss-exploit"
+
+    # Explicitly authorized LOCAL paths for path-based scanners (semgrep,
+    # gitleaks, trivy). Comma-separated absolute paths / roots. A target path
+    # must live under one of these roots or it is rejected. Empty => no local
+    # path scanning is permitted. This is the hard authorization gate for
+    # source/image scanning.
+    authorized_scan_paths: str = ""
+
+    @property
+    def authorized_scan_path_list(self) -> tuple[str, ...]:
+        """Parsed, normalized list of authorized local scan roots."""
+        return tuple(
+            p.strip().rstrip("/") for p in self.authorized_scan_paths.split(",") if p.strip()
+        )
+
+    def scanner_enabled(self, name: str) -> bool:
+        """Return whether a given external scanner is enabled in settings."""
+        return {
+            "recon": True,  # pure-Python, always available
+            "nuclei": self.enable_nuclei,
+            "zap_baseline": self.enable_zap,
+            "semgrep": self.enable_semgrep,
+            "gitleaks": self.enable_gitleaks,
+            "trivy": self.enable_trivy,
+        }.get(name, False)
+
 
 @lru_cache
 def get_settings() -> Settings:

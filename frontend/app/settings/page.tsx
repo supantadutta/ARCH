@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, Settings } from "@/lib/api";
+import { api, Settings, ScannerStatusResponse } from "@/lib/api";
 import { Card, Button, PageHeader } from "@/components/ui";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [scanners, setScanners] = useState<ScannerStatusResponse | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const load = () => api.get<Settings>("/settings").then(setSettings);
+  const load = () => {
+    api.get<Settings>("/settings").then(setSettings);
+    api.get<ScannerStatusResponse>("/settings/scanners").then(setScanners);
+  };
   useEffect(() => {
     load();
   }, []);
@@ -77,6 +81,57 @@ export default function SettingsPage() {
           </div>
         </Card>
       </div>
+
+      {scanners && (
+        <Card className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold">External Scanners</h3>
+            <span className="text-xs text-slate-400">
+              timeout {scanners.timeout_seconds}s · dry-run default{" "}
+              {scanners.dry_run_default ? "ON" : "OFF"}
+            </span>
+          </div>
+          <p className="mb-3 text-xs text-slate-500">
+            A scanner runs for real only when it is <b>enabled</b> in settings <b>and</b> its
+            binary is <b>installed</b>. All external scanners are opt-in and disabled by default.
+          </p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-slate-500">
+                <th className="py-2">Scanner</th>
+                <th>Target</th>
+                <th>Enabled</th>
+                <th>Installed</th>
+                <th>Runnable</th>
+                <th>Default safe mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scanners.scanners.map((s) => (
+                <tr key={s.name} className="border-b last:border-0">
+                  <td className="py-2 font-mono">{s.name}</td>
+                  <td className="text-slate-500">{s.target_kind}</td>
+                  <td>{s.enabled ? "✅" : "—"}</td>
+                  <td>{s.installed ? "✅" : "—"}</td>
+                  <td>{s.runnable ? "✅ yes" : "no"}</td>
+                  <td className="text-slate-500">{s.default_mode}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {scanners.authorized_scan_paths.length > 0 ? (
+            <p className="mt-3 text-xs text-slate-500">
+              Authorized local scan paths:{" "}
+              <span className="font-mono">{scanners.authorized_scan_paths.join(", ")}</span>
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-slate-400">
+              No authorized local scan paths configured — semgrep/gitleaks/trivy path scanning is
+              disabled.
+            </p>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

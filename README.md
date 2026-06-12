@@ -34,6 +34,29 @@ findings, AI triage, reports and retests — with safety controls baked in as
 | **Audit logging** | Every program/scope/scan/finding/report action and every scope decision is recorded in an immutable `audit_logs` table (see below). |
 | **AI must not invent evidence** | The triage layer only reasons over existing finding data; high/critical or low-confidence findings always require manual review. |
 
+### Capabilities this platform deliberately does NOT build
+
+By design, AutoBugHunter contains **none** of the following, and will not — they
+are out of scope as a matter of policy:
+
+- ❌ Autonomous exploitation / exploit modules
+- ❌ Credential stuffing or credential attacks
+- ❌ Brute-force modules
+- ❌ Phishing modules
+- ❌ Malware modules
+- ❌ WAF-bypass automation
+- ❌ DoS / DDoS testing
+- ❌ Data extraction / exfiltration modules
+- ❌ Persistence modules
+- ❌ Privilege-escalation modules
+- ❌ Payload mutation for detection evasion
+
+What it **does** build is the safe, defensible workflow: safe recon, safe
+(passive) scanning, validation strictly from collected evidence, AI triage,
+deduplication, reporting, a dashboard, retesting, and audit logging. Any
+validation that could be risky is flagged **"manual review required"** for a
+human — the platform never performs destructive validation itself.
+
 ### Audited events
 
 The following are written to the `audit_logs` table (viewable on the **Audit Log**
@@ -227,27 +250,59 @@ Covered safety controls and core flows:
 - **Command allowlist** rejects non-allowed binaries and shell metacharacters.
 - **Audit logging** records program/scope/scan/finding/report events and
   rejected attempts.
+- **External scanners** are opt-in: disabled scanners refuse to run, dry-run
+  previews without enable/install, nuclei excludes intrusive tags, ZAP uses the
+  baseline binary only, and path scanners (semgrep/gitleaks/trivy) reject
+  unauthorized paths and path traversal.
 - Finding creation, AI triage mock response, and report generation.
 
 ---
 
 ## Scanners
 
-Wrappers live in `backend/app/scanners/`. Each one enforces scope, rate limits,
-command logging, stdout/stderr capture, result normalization and dry-run.
+Wrappers live in `backend/app/scanners/`. Each one enforces scope/path
+authorization, rate limits, a timeout, command logging, stdout/stderr/exit-code
+capture, result normalization and dry-run.
 
-| Scanner | Tool | Mode |
-| --- | --- | --- |
-| `recon_scanner.py` | pure Python (requests) | passive HTTP/HTTPS probing |
-| `nuclei_scanner.py` | nuclei | templates, intrusive tags excluded |
-| `zap_scanner.py` | zap-baseline.py | **baseline/passive only** |
-| `semgrep_scanner.py` | semgrep | static analysis (read-only) |
-| `gitleaks_scanner.py` | gitleaks | secret detection (records location, not secret) |
-| `trivy_scanner.py` | trivy | dependency/vuln scan (read-only) |
+| Scanner | Tool | Target | Safe default mode |
+| --- | --- | --- | --- |
+| `recon_scanner.py` | pure Python (requests) | network | passive HTTP/HTTPS probing |
+| `nuclei_scanner.py` | nuclei | network | non-intrusive templates only (intrusive tags excluded) |
+| `zap_scanner.py` | zap-baseline.py | network | **baseline/passive only** (no active attacks) |
+| `semgrep_scanner.py` | semgrep | local path | static analysis (read-only) |
+| `gitleaks_scanner.py` | gitleaks | local path | secret detection (records location, not the secret) |
+| `trivy_scanner.py` | trivy | local path | dependency/vuln scan (read-only) |
 
-For the MVP, recon runs with no external tools. `subfinder` / `httpx` /
-`katana` are noted as future, still scope-gated, passive integrations. Other
-scanners only execute when their binary is installed *and* `DRY_RUN=false`.
+### Opt-in & gating (external scanners)
+
+External scanners are **disabled by default**. A scanner executes for real only
+when **both** are true:
+
+1. It is **enabled** in settings — `ENABLE_NUCLEI`, `ENABLE_ZAP`,
+   `ENABLE_SEMGREP`, `ENABLE_GITLEAKS`, `ENABLE_TRIVY` (all `false` by default).
+2. Its **binary is installed** in the worker image.
+
+`recon` is pure-Python and always available. **Dry-run** (the default) previews
+the exact command without executing it, regardless of the flags above. Every
+run has a wall-clock timeout (`SCANNER_TIMEOUT_SECONDS`, default 600s) and
+stores stdout, stderr, exit code, logs and normalized findings on the scan job
+(viewable on the **Scan Jobs** page). Live scanner status (enabled / installed /
+runnable) is shown on the **Settings** page (`GET /api/v1/settings/scanners`).
+
+### Network vs. path targets
+
+- **Network** scanners (recon, nuclei, zap) authorize the target against the
+  program **scope allowlist**.
+- **Path** scanners (semgrep, gitleaks, trivy) operate only on **explicitly
+  authorized local paths**. A target path must (a) live under a root listed in
+  `AUTHORIZED_SCAN_PATHS` *and* (b) match an allowed `repo`/`mobile_app` scope
+  entry. Path traversal (`..`) is always rejected. With `AUTHORIZED_SCAN_PATHS`
+  empty (the default), local path scanning is disabled.
+
+Nuclei's intrusive template tags are excluded via `NUCLEI_EXCLUDED_TAGS`
+(`dos,fuzz,brute,intrusive,…`), and only the ZAP **baseline** (passive) scan is
+ever invoked. `subfinder` / `httpx` / `katana` remain noted as future,
+still-gated, passive integrations.
 
 ---
 

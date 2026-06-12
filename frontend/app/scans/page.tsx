@@ -15,9 +15,21 @@ export default function ScansPage() {
   const [dryRun, setDryRun] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<ScanJob | null>(null);
+  const [logTab, setLogTab] = useState<"logs" | "stdout" | "stderr">("logs");
 
   const load = () => {
     if (selected) api.get<ScanJob[]>(`/programs/${selected}/scans`).then(setJobs);
+  };
+
+  // Fetch the freshest copy of a job (logs/stdout/stderr/exit code) on open.
+  const openLogs = async (job: ScanJob) => {
+    setLogTab("logs");
+    try {
+      const fresh = await api.get<ScanJob>(`/programs/${selected}/scans/${job.id}`);
+      setSelectedJob(fresh);
+    } catch {
+      setSelectedJob(job);
+    }
   };
   useEffect(() => {
     load();
@@ -100,7 +112,7 @@ export default function ScansPage() {
                   <Badge kind="status" value={j.status} />
                 </td>
                 <td className="text-right">
-                  <button onClick={() => setSelectedJob(j)} className="text-xs text-brand hover:underline">
+                  <button onClick={() => openLogs(j)} className="text-xs text-brand hover:underline">
                     logs
                   </button>
                 </td>
@@ -116,16 +128,39 @@ export default function ScansPage() {
       {selectedJob && (
         <Card className="mt-6">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-semibold">Logs — job #{selectedJob.id}</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="font-semibold">Job #{selectedJob.id} output</h3>
+              <Badge kind="status" value={selectedJob.status} />
+              <span className="text-xs text-slate-500">
+                exit code: {selectedJob.exit_code ?? "—"}
+              </span>
+            </div>
             <button onClick={() => setSelectedJob(null)} className="text-xs text-slate-400">
               close
             </button>
           </div>
           {selectedJob.error_message && (
-            <p className="mb-2 text-sm text-red-600">{selectedJob.error_message}</p>
+            <p className="mb-2 text-sm text-red-600">⛔ {selectedJob.error_message}</p>
           )}
+          <div className="mb-2 flex gap-2">
+            {(["logs", "stdout", "stderr"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setLogTab(t)}
+                className={`rounded-lg px-3 py-1 text-xs ${
+                  logTab === t ? "bg-brand text-white" : "border border-slate-300 text-slate-600"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
           <pre className="max-h-80 overflow-auto rounded-lg bg-slate-900 p-4 text-xs text-green-200">
-            {selectedJob.logs || "(no logs)"}
+            {logTab === "logs"
+              ? selectedJob.logs || "(no logs)"
+              : logTab === "stdout"
+                ? selectedJob.stdout || "(no stdout)"
+                : selectedJob.stderr || "(no stderr)"}
           </pre>
         </Card>
       )}

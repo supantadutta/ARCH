@@ -23,6 +23,8 @@ class TrivyScanner(BaseScanner):
     name = "trivy"
     scan_type = "trivy"
     binary = "trivy"
+    # Operates on an explicitly authorized local repo/image path only.
+    target_kind = "path"
 
     def build_command(self, target: str) -> list[str]:
         # ``target`` is an in-scope local path (filesystem mode is safest).

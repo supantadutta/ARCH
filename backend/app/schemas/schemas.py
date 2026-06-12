@@ -162,6 +162,9 @@ class ScanJobOut(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     logs: str | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    exit_code: int | None = None
     error_message: str | None = None
     created_at: datetime
 

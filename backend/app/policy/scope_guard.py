@@ -19,6 +19,7 @@ Design principles
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -250,4 +251,98 @@ def validate_scan_request(
     if not decision.allowed:
         raise ScopeError(decision)
 
+    return decision
+
+
+# Scan types whose target is a local filesystem path / image reference rather
+# than a network host. These are authorized via the explicit path allowlist.
+PATH_SCAN_TYPES = ("semgrep", "gitleaks", "trivy")
+
+
+def normalize_path_target(target: str) -> str:
+    """Normalize a filesystem path target (collapse, strip trailing slash)."""
+    return os.path.normpath((target or "").strip()).rstrip("/") if target else ""
+
+
+def is_path_authorized(db: Session, program_id: int, target: str) -> ScopeDecision:
+    """Authorize a local path / image target for a path-based scanner.
+
+    A path is authorized only when BOTH hold:
+
+    * it lives under one of the operator-configured ``AUTHORIZED_SCAN_PATHS``
+      roots (the hard, global allowlist), and
+    * the program has an explicit allow ``repo``/``mobile_app`` scope entry that
+      matches it.
+
+    Path traversal (``..``) is always rejected.
+    """
+    raw = (target or "").strip()
+    if not raw:
+        return ScopeDecision(False, "Empty path target.", "")
+    if ".." in raw.split(os.sep) or ".." in raw.split("/"):
+        return ScopeDecision(False, "Path traversal ('..') is not allowed.", raw)
+
+    normalized = normalize_path_target(raw)
+
+    # (a) Global allowlist of authorized roots.
+    roots = settings.authorized_scan_path_list
+    if not roots:
+        return ScopeDecision(
+            False,
+            "No authorized local scan paths are configured (AUTHORIZED_SCAN_PATHS is empty).",
+            normalized,
+        )
+    under_root = any(
+        normalized == root or normalized.startswith(root + os.sep) for root in roots
+    )
+    if not under_root:
+        return ScopeDecision(
+            False,
+            f"Path '{normalized}' is not under any authorized scan root.",
+            normalized,
+        )
+
+    # (b) Explicit per-program repo/mobile_app scope entry.
+    items = (
+        db.query(ScopeItem)
+        .filter(
+            ScopeItem.program_id == program_id,
+            ScopeItem.scope_type.in_(("repo", "mobile_app")),
+        )
+        .all()
+    )
+    for item in items:
+        item_value = normalize_path_target(item.value)
+        matches = normalized == item_value or normalized.startswith(item_value + os.sep)
+        if matches:
+            if not item.is_allowed:
+                return ScopeDecision(
+                    False, f"Path '{normalized}' matches an explicit deny entry.", normalized, item.scope_type
+                )
+            return ScopeDecision(
+                True, f"Path '{normalized}' is explicitly authorized.", normalized, item.scope_type
+            )
+
+    return ScopeDecision(
+        False,
+        f"Path '{normalized}' has no explicit authorized repo/mobile_app scope entry.",
+        normalized,
+    )
+
+
+def validate_path_scan_request(
+    db: Session, program_id: int, target: str, scan_type: str
+) -> ScopeDecision:
+    """Validate a path-based scan request (scan type + path authorization)."""
+    if scan_type in settings.forbidden_scan_types:
+        raise ScopeError(
+            ScopeDecision(False, f"Scan type '{scan_type}' is forbidden by platform policy.", target)
+        )
+    if scan_type not in settings.allowed_scan_types:
+        raise ScopeError(
+            ScopeDecision(False, f"Scan type '{scan_type}' is not in the allowed scan-type list.", target)
+        )
+    decision = is_path_authorized(db, program_id, target)
+    if not decision.allowed:
+        raise ScopeError(decision)
     return decision
